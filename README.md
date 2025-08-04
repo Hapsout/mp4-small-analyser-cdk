@@ -1,58 +1,101 @@
+# MP4 Small Analyser CDK
 
-# Welcome to your CDK Python project!
+This AWS CDK Python project deploys infrastructure for analyzing small MP4 files.
 
-This is a blank project for CDK development with Python.
+## Repository
+
+🔗 **GitHub**: [https://github.com/Hapsout/mp4-small-analyser-cdk](https://github.com/Hapsout/mp4-small-analyser-cdk)
 
 The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+## Getting Started
 
-To manually create a virtualenv on MacOS and Linux:
+### Prerequisites
+
+- AWS CLI configured with appropriate credentials
+- Node.js and npm (for AWS CDK CLI)
+- Python 3.11+ and pip
+
+### Setup
+
+1. **Clone the repository**:
+
+   ```bash
+   git clone git@github.com:Hapsout/mp4-small-analyser-cdk.git
+   cd mp4-small-analyser-cdk
+   ```
+
+2. **Create and activate virtual environment**:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Linux/macOS
+   # .venv\Scripts\activate.bat  # On Windows
+   ```
+
+3. **Install dependencies**:
+
+   ```bash
+   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
+   ```
+
+4. **Bootstrap CDK** (first time only):
+   ```bash
+   cdk bootstrap
+   ```
+
+## Development
+
+### Project Structure
 
 ```
-$ python3 -m venv .venv
+mp4-small-analyser-cdk/
+├── mp4_small_analyser_cdk/           # Main CDK stack
+│   └── mp4_small_analyser_cdk_stack.py
+├── tests/                            # Unit tests
+├── app.py                           # CDK app entry point
+├── cdk.json                         # CDK configuration
+└── requirements.txt                 # Python dependencies
 ```
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+### Testing
 
-```
-$ source .venv/bin/activate
-```
+Run unit tests:
 
-If you are a Windows platform, you would activate the virtualenv like this:
-
-```
-% .venv\Scripts\activate.bat
+```bash
+pytest
 ```
 
-Once the virtualenv is activated, you can install the required dependencies.
+### Synthesis and Deployment
 
-```
-$ pip install -r requirements.txt
-```
+Synthesize CloudFormation template:
 
-At this point you can now synthesize the CloudFormation template for this code.
-
-```
-$ cdk synth
+```bash
+cdk synth
 ```
 
-To add additional dependencies, for example other CDK libraries, just add
-them to your `setup.py` file and rerun the `pip install -r requirements.txt`
-command.
+Deploy to AWS:
 
-## Useful commands
+```bash
+cdk deploy
+```
 
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
+## Useful Commands
 
-Enjoy!
+- `cdk ls` - List all stacks in the app
+- `cdk synth` - Synthesize CloudFormation template
+- `cdk deploy` - Deploy stack to AWS
+- `cdk diff` - Compare deployed stack with current state
+- `cdk destroy` - Remove stack from AWS
+- `cdk docs` - Open CDK documentation
+
+## Contributing
+
+1. Create a feature branch from `main`
+2. Make your changes and test them
+3. Submit a pull request
+
+---
+
+Built with ❤️ using AWS CDK Python
