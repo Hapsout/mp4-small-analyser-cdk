@@ -44,11 +44,11 @@ def lambda_handler(event, context):
         file_url = request_data.get('file_url')
         callback_url = request_data.get('callback_url')
         
-        if not file_url or not callback_url:
+        if not file_url:
             return {
                 'statusCode': 400,
                 'body': json.dumps({
-                    'error': 'file_url et callback_url sont requis'
+                    'error': 'file_url est requis'
                 }),
                 'headers': {
                     'Content-Type': 'application/json',
@@ -56,15 +56,12 @@ def lambda_handler(event, context):
                 }
             }
         
+        # callback_url est optionnel (mode synchrone vs asynchrone)
+        
         # Auto-générer task_id s'il n'est pas fourni
         task_id = request_data.get('task_id')
         if not task_id or not task_id.strip():
             task_id = str(uuid.uuid4())
-        
-        # Auto-générer batch_id s'il n'est pas fourni
-        batch_id = request_data.get('batch_id')
-        if not batch_id or not batch_id.strip():
-            batch_id = str(uuid.uuid4())
         
         # Récupérer la méthode HTTP pour le callback (POST par défaut)
         callback_method = request_data.get('method', 'POST').upper()
@@ -82,58 +79,92 @@ def lambda_handler(event, context):
         
         # Analyser le fichier MP4
         logger.info(f"Début de l'analyse pour task_id: {task_id}, URL: {file_url}")
+        start_time = datetime.now()
         
         analysis_result = analyze_mp4_from_url(file_url)
         
-        # Préparer le callback
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        
+        # Préparer les données de callback/réponse
         callback_data = {
             'status': 'completed',
             'results': analysis_result,
-            'processing_time': analysis_result.get('processing_time', 0),
-            'batch_id': batch_id,
+            'task_id': task_id,
+            'processing_time': round(processing_time, 2),
             'metadata': {
                 'task_id': task_id,
-                'batch_id': batch_id,
                 'source_url': file_url,
                 'processor': 'mp4_small_analyser',
-                'version': '1.0.0'
+                'version': '1.0.0',
+                'processed_at': end_time.isoformat()
             }
         }
         
-        # Envoyer le callback
-        send_callback(callback_url, task_id, callback_data, callback_method)
-        
-        logger.info(f"Analyse terminée pour task_id: {task_id}, batch_id: {batch_id}")
-        
-        return json_response({
-            'message': 'Analyse lancée avec succès',
-            'task_id': task_id,
-            'batch_id': batch_id,
-            'callback_url': callback_url
-        })
+        # Mode asynchrone : envoyer le callback
+        if callback_url:
+            send_callback(callback_url, task_id, callback_data, callback_method)
+            logger.info(f"Analyse terminée pour task_id: {task_id} en {processing_time:.2f}s - Callback envoyé")
+            
+            return json_response({
+                'message': 'Analyse lancée avec succès',
+                'task_id': task_id,
+                'callback_url': callback_url,
+                'processing_time': round(processing_time, 2)
+            })
+        else:
+            # Mode synchrone : retourner directement les résultats
+            logger.info(f"Analyse terminée pour task_id: {task_id} en {processing_time:.2f}s - Mode synchrone")
+            
+            return json_response({
+                'message': 'Analyse terminée avec succès',
+                'task_id': task_id,
+                'results': analysis_result,
+                'status': 'completed',
+                'processing_time': round(processing_time, 2)
+            })
         
     except Exception as e:
         logger.error(f"Erreur dans lambda_handler: {str(e)}")
         
         # Essayer d'envoyer un callback d'erreur si possible
         try:
-            # Initialiser les variables si elles n'existent pas
-            callback_url = request_data.get('callback_url') if 'request_data' in locals() else None
-            task_id = request_data.get('task_id') if 'request_data' in locals() else str(uuid.uuid4())
-            batch_id = request_data.get('batch_id') if 'request_data' in locals() else str(uuid.uuid4())
+            # Calculer le temps de traitement même en cas d'erreur
+            if 'start_time' in locals():
+                processing_time = (datetime.now() - start_time).total_seconds()
+            else:
+                processing_time = 0
+            
+            # Utiliser les variables déjà définies ou des valeurs par défaut
+            if 'callback_url' not in locals():
+                callback_url = request_data.get('callback_url') if 'request_data' in locals() else None
+            if 'task_id' not in locals():
+                task_id = request_data.get('task_id') if 'request_data' in locals() else str(uuid.uuid4())
+            
+            error_callback = {
+                'status': 'failed',
+                'error': str(e),
+                'task_id': task_id,
+                'processing_time': round(processing_time, 2),
+                'metadata': {
+                    'task_id': task_id,
+                    'processor': 'mp4_small_analyser',
+                    'failed_at': datetime.now().isoformat()
+                }
+            }
             
             if callback_url:
-                error_callback = {
-                    'status': 'failed',
-                    'error': str(e),
-                    'batch_id': batch_id,
-                    'metadata': {
-                        'task_id': task_id,
-                        'batch_id': batch_id,
-                        'processor': 'mp4_small_analyser'
-                    }
-                }
+                # Mode asynchrone : envoyer le callback d'erreur
                 send_callback(callback_url, task_id, error_callback, 'POST')
+                return json_response({'error': f'Erreur lors de l\'analyse: {str(e)}'}, 500)
+            else:
+                # Mode synchrone : retourner l'erreur directement avec les détails
+                return json_response({
+                    'error': f'Erreur lors de l\'analyse: {str(e)}',
+                    'task_id': task_id,
+                    'status': 'failed',
+                    'processing_time': round(processing_time, 2)
+                }, 500)
         except:
             pass
         
@@ -316,8 +347,8 @@ def analyze_mp4_from_url(file_url):
 def send_callback(callback_url, task_id, callback_data, method='POST'):
     """Envoie le callback au système demandeur"""
     try:
-        # Construire l'URL complète avec le task_id
-        full_callback_url = f"{callback_url.rstrip('/')}/{task_id}"
+        # Utiliser directement l'URL de callback fournie (elle contient déjà le task_id si nécessaire)
+        full_callback_url = callback_url.rstrip('/')
         
         # Choisir la méthode HTTP appropriée
         method = method.upper()

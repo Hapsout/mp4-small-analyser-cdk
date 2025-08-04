@@ -1,0 +1,8 @@
+{
+    "files_url": [
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+    ],
+    "callback_url": "https://v64vg4hyb6.execute-api.eu-west-1.amazonaws.com/prod/callback"
+}

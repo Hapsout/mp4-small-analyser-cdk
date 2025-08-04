@@ -1,6 +1,6 @@
 # MP4 Small Analyser CDK
 
-Ce projet AWS CDK déploie une infrastructure pour analyser de petits fichiers MP4. Il comprend une API de callback pour recevoir et traiter les résultats d'analyse.
+Une solution serverless complète pour l'analyse de fichiers MP4 déployée sur AWS avec CDK. Le système prend en charge l'analyse synchrone et asynchrone de fichiers MP4 avec callback automatique.
 
 ## 🔗 Repository
 
@@ -10,7 +10,7 @@ Ce projet AWS CDK déploie une infrastructure pour analyser de petits fichiers M
 
 - **AWS CLI** configuré avec les bonnes permissions
 - **Node.js** et npm (pour AWS CDK CLI)
-- **Python 3.11+** et pip
+- **Python 3.12+** et pip
 - **Git** pour cloner le repository
 
 ## 🚀 Installation et Configuration
@@ -22,21 +22,14 @@ git clone git@github.com:Hapsout/mp4-small-analyser-cdk.git
 cd mp4-small-analyser-cdk
 ```
 
-### 2. Configuration interactive
+### 2. Configuration
 
-Utilisez le script de configuration pour générer votre fichier `.env` :
+Créez votre fichier de configuration `.env` :
 
 ```bash
-./setup-config.sh
+cp .env.example .env
+# Éditez le fichier .env avec vos paramètres AWS
 ```
-
-Ce script vous demande :
-
-- **ID de compte AWS** (auto-détecté si possible)
-- **Région AWS** (par défaut: eu-west-1)
-- **Profil AWS** (par défaut: default)
-- **Nom du projet** et **environnement**
-- **Configuration avancée** (optionnelle)
 
 ### 3. Installation des dépendances
 
@@ -44,207 +37,216 @@ Ce script vous demande :
 # Créer et activer l'environnement virtuel Python
 python3 -m venv .venv
 source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate.bat  # Windows
 
 # Installer les dépendances
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-### 4. Bootstrap CDK (première fois uniquement)
+### 4. Déploiement
 
 ```bash
-# Avec le script configuré
-./cdk-with-config.sh bootstrap
+# Bootstrap CDK (première fois uniquement)
+./cdk.sh bootstrap
 
-# Ou manuellement avec votre profil
-cdk bootstrap --profile your-profile
+# Déployer l'infrastructure complète
+./cdk.sh deploy --all
 ```
+
+Après le déploiement, les URLs d'API sont sauvegardées dans `urls.txt`.
 
 ## 🏗️ Architecture
 
-### Stacks Déployées
+### Composants Principaux
 
-1. **Mp4SmallAnalyserCdkStack** : Stack principale (vide pour l'instant)
-2. **Mp4AnalyserCallbackStack** : API de callback avec :
-   - **API Gateway** : Endpoints REST pour recevoir les callbacks
-   - **Lambda Functions** : Traitement des callbacks et fonctions de test
+1. **Mp4SmallAnalyserCdkStack** : Stack principale avec :
+
+   - **API Gateway** : Endpoint unifié `/mp4_small_analyser`
+   - **Lambda Dispatcher** : Gère le routage synchrone/asynchrone
+   - **Lambda MP4 Analyser** : Analyse les fichiers MP4 avec ffmpeg
+
+2. **Mp4AnalyserCallbackStack** : Stack de callback avec :
+   - **API Gateway** : Endpoints de callback et récupération
+   - **Lambda Callback** : Traitement et stockage des résultats
    - **DynamoDB** : Stockage des résultats d'analyse
 
-### Structure du Projet
+### Flux de Traitement
 
 ```
-mp4-small-analyser-cdk/
-├── mp4_small_analyser_cdk/           # Code CDK principal
-│   ├── callback_stack.py             # Stack API callback
-│   └── mp4_small_analyser_cdk_stack.py
-├── lambda/                           # Code des fonctions Lambda
-│   ├── callback/                     # Handler pour callbacks
-│   └── test/                         # Fonctions de test
-├── tests/                            # Tests unitaires
-├── *.json                           # Exemples de payloads
-├── .env.example                     # Exemple de configuration
-├── setup-config.sh                 # Script de configuration
-├── cdk-with-config.sh              # Script CDK avec config
-└── app.py                          # Point d'entrée CDK
+Client Request → Dispatcher → MP4 Analyser → Callback (si async) → DynamoDB
+              ↓
+         Response (si sync)
 ```
 
-## 🔧 Utilisation
+## 🔧 Utilisation de l'API
 
-### Commandes de Déploiement
+### Endpoint Principal
+
+**URL** : `https://{api-id}.execute-api.{region}.amazonaws.com/prod/mp4_small_analyser`
+
+### Mode Synchrone
+
+Pour une analyse immédiate avec réponse directe :
 
 ```bash
-# Lister les stacks
-./cdk-with-config.sh list
-
-# Synthétiser les templates
-./cdk-with-config.sh synth
-
-# Voir les différences
-./cdk-with-config.sh diff
-
-# Déployer toutes les stacks
-./cdk-with-config.sh deploy --all
-
-# Déployer una stack spécifique
-./cdk-with-config.sh deploy Mp4AnalyserCallbackStack
-
-# Supprimer les stacks
-./cdk-with-config.sh destroy --all
+curl -X POST "https://your-api-url/prod/mp4_small_analyser" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      {
+        "file_url": "https://example.com/video.mp4"
+      }
+    ]
+  }'
 ```
 
-### API Callback Endpoints
-
-Une fois déployée, l'API callback fournit les endpoints suivants :
-
-#### 📤 Recevoir un Callback
-
-```http
-POST /callback/{task_id}
-Content-Type: application/json
-
-{
-  "status": "completed",
-  "task_id": "task-001",
-  "batch_id": "batch-2025-08-04-001",
-  "file_url": "https://example.com/video.mp4",
-  "results": { ... },
-  "metadata": { ... }
-}
-```
-
-#### 📥 Récupérer les Résultats
-
-```bash
-# Résultats d'une tâche spécifique
-GET /callback/{task_id}
-
-# Tous les résultats d'un batch
-GET /callback/batch/{batch_id}
-
-# Lister tous les résultats (debug)
-GET /test/results?limit=50
-```
-
-#### 🧪 Tests et Simulation
-
-```bash
-# Simuler un callback pour test
-POST /test/simulate
-{
-  "task_id": "test-task-001",
-  "status": "completed",
-  "file_url": "https://example.com/test.mp4"
-}
-```
-
-## 📄 Exemples de Payloads
-
-### Callback de Succès
-
-Voir `callback_payload_exemple.json` :
+**Réponse synchrone :**
 
 ```json
 {
-  "status": "completed",
-  "task_id": "task-001",
-  "batch_id": "batch-2025-08-04-001",
-  "file_url": "https://example.com/video.mp4",
-  "processing_time": 15.23,
-  "results": {
-    "file_info": {
-      "file_size": 2048576,
-      "duration": 30.067,
-      "format": "mp4"
-    },
-    "video_analysis": {
-      "codec": "h264",
-      "resolution": "1920x1080",
-      "quality_score": 0.85
-    },
-    "audio_analysis": {
-      "codec": "aac",
-      "quality_score": 0.9
-    }
-  }
-}
-```
-
-### Callback d'Erreur
-
-Voir `callback_error_exemple.json` :
-
-```json
-{
-  "status": "failed",
-  "task_id": "task-002",
-  "error": "Unable to download file: HTTP 404 Not Found",
-  "error_code": "FILE_NOT_FOUND"
-}
-```
-
-### Requête Batch
-
-Voir `batch_request_exemple.json` pour le format de requête avec plusieurs commandes :
-
-```json
-{
-  "mp4_small_analyser": [
+  "message": "3 analyses terminées avec succès en mode synchrone",
+  "mode": "sync",
+  "total_files": 3,
+  "dispatcher_processing_time": 2.45,
+  "results": [
     {
-      "file_url": "https://example.com/video1.mp4",
-      "callback_url": "https://your-api.com/callback/task-001"
+      "task_id": "abc123",
+      "file_url": "https://example.com/video.mp4",
+      "status": "completed",
+      "processing_time": 1.23,
+      "results": {
+        "silencePercentage": 15.5,
+        "loudnessMeasured": -18.2,
+        "loudnessTruePeak": -3.1,
+        "audioDuration": 30.5,
+        "videoDuration": 30.5
+      }
     }
   ]
 }
 ```
 
-## 🧪 Tests et Développement
+### Mode Asynchrone
 
-### Tests Unitaires
-
-```bash
-# Exécuter les tests
-pytest
-
-# Tests avec coverage
-pytest --cov=mp4_small_analyser_cdk
-```
-
-### Tests d'Intégration API
+Pour traiter plusieurs fichiers en parallèle avec callback :
 
 ```bash
-# Obtenir l'URL de l'API après déploiement
-./cdk-with-config.sh synth Mp4AnalyserCallbackStack | grep CallbackApiEndpoint
-
-# Tester l'API
-curl -X POST "https://your-api-id.execute-api.region.amazonaws.com/prod/test/simulate" \
+curl -X POST "https://your-api-url/prod/mp4_small_analyser" \
   -H "Content-Type: application/json" \
-  -d '{"task_id": "test-001", "status": "completed"}'
+  -d '{
+    "files_url": [
+        "file_url": "https://example.com/video1.mp4",
+        "file_url": "https://example.com/video2.mp4"
+        ],
+    "callback_url": "https://callback-api-url/prod/callback"
+  }'
 ```
 
-### Variables d'Environnement
+**Réponse asynchrone :**
 
-Le fichier `.env` (généré par `setup-config.sh`) :
+```json
+{
+  "message": "2 analyses lancées avec succès en mode asynchrone",
+  "mode": "async",
+  "total_files": 2,
+  "dispatcher_processing_time": 0.15,
+  "tasks": [
+    {
+      "task_id": "def456",
+      "file_url": "https://example.com/video1.mp4",
+      "callback_url": "https://callback-api-url/prod/callback/def456",
+      "status": "launched"
+    }
+  ]
+}
+```
+
+### Récupération des Résultats
+
+Une fois l'analyse terminée (mode asynchrone), récupérez les résultats :
+
+```bash
+# Résultat d'une tâche spécifique
+curl "https://callback-api-url/prod/callback/{task_id}"
+
+# Tous les résultats récents
+curl "https://callback-api-url/prod/test/results?limit=10"
+```
+
+## 📄 Format des Résultats
+
+### Analyse Réussie
+
+```json
+{
+  "status": "completed",
+  "task_id": "abc123",
+  "processing_time": 1.23,
+  "results": {
+    "silencePercentage": 15.5,
+    "loudnessMeasured": -18.2,
+    "loudnessTruePeak": -3.1,
+    "audioDuration": 30.5,
+    "videoDuration": 30.5,
+    "processing_time": 1.15
+  },
+  "metadata": {
+    "task_id": "abc123",
+    "source_url": "https://example.com/video.mp4",
+    "processor": "mp4_small_analyser",
+    "version": "1.0.0",
+    "processed_at": "2025-08-04T15:30:45.123456"
+  }
+}
+```
+
+### Analyse Échouée
+
+```json
+{
+  "status": "failed",
+  "task_id": "def456",
+  "processing_time": 0.5,
+  "error": "Le fichier ne contient pas de piste audio.",
+  "metadata": {
+    "task_id": "def456",
+    "processor": "mp4_small_analyser",
+    "failed_at": "2025-08-04T15:30:45.123456"
+  }
+}
+```
+
+## 📊 Métriques d'Analyse
+
+Le système fournit plusieurs métriques audio :
+
+- **silencePercentage** : Pourcentage de silence dans l'audio (seuil : -50dB, durée min : 0.5s)
+- **loudnessMeasured** : Loudness intégrée en LUFS (EBU R128)
+- **loudnessTruePeak** : True peak en dBFS
+- **audioDuration** : Durée de la piste audio en secondes
+- **videoDuration** : Durée de la piste vidéo en secondes
+- **processing_time** : Temps de traitement individuel du fichier
+
+## 🧪 Exemples et Tests
+
+Le repository inclut plusieurs fichiers d'exemple :
+
+- `new_sync_request_example.json` : Requête synchrone
+- `new_async_request_example.json` : Requête asynchrone
+- `exemples/` : Dossier avec différents formats de requêtes
+
+### Test Rapide
+
+```bash
+# Test synchrone avec un fichier court
+curl -X POST "$(cat urls.txt | grep 'MP4 Analyser' | cut -d' ' -f4)" \
+  -H "Content-Type: application/json" \
+  -d @new_sync_request_example.json
+```
+
+## 🔧 Configuration Avancée
+
+### Variables d'Environnement (.env)
 
 ```bash
 # Configuration AWS
@@ -255,110 +257,123 @@ AWS_PROFILE=default
 # Configuration du projet
 PROJECT_NAME=mp4-small-analyser
 ENVIRONMENT=dev
-
-# Tags de projet
-CLIENT=nom-client
-PROJECT=mp4-small-analyser
-
-# Configuration des ressources
-DYNAMODB_TABLE_NAME=mp4-analyser-callback-results
-LAMBDA_TIMEOUT=30
-LAMBDA_MEMORY_SIZE=256
 ```
 
-## 🔐 Sécurité
+### Limites et Timeouts
 
-- ✅ Le fichier `.env` est dans `.gitignore`
-- ✅ CORS configuré pour l'API
-- ✅ Permissions IAM minimales pour les Lambdas
+- **Lambda Timeout** : 2 minutes pour l'analyser, 30s pour le dispatcher
+- **Lambda Memory** : 2048MB pour l'analyser (ffmpeg), 512MB pour le dispatcher
+- **Concurrence** : Jusqu'à 1000 exécutions Lambda simultanées
+- **Taille fichier** : Limitée par la mémoire Lambda et le timeout
+
+## 🔐 Sécurité et Permissions
+
+- ✅ CORS configuré pour tous les origins (`*`)
+- ✅ Permissions IAM minimales pour chaque Lambda
 - ✅ Chiffrement au repos avec DynamoDB
-- ✅ Point-in-time recovery activé
+- ✅ Variables d'environnement sécurisées
+- ✅ Logs CloudWatch automatiques
 
-## 🏷️ Tags et Organisation
+## 📊 Monitoring et Logs
 
-Toutes les ressources AWS sont automatiquement taguées avec :
-
-- **Environment** : Environnement de déploiement (dev/staging/prod)
-- **Project** : Nom du projet
-- **Client** : Nom du client
-- **ManagedBy** : AWS-CDK
-- **Owner** : MP4-Small-Analyser
-
-Ces tags facilitent :
-
-- 📊 La gestion des coûts par client/projet
-- 🔍 Le filtrage des ressources dans la console AWS
-- 📋 La génération de rapports de facturation
-- 🔄 L'automatisation des processus DevOps
-
-## 📊 Monitoring
-
-### CloudWatch
-
-- Logs des fonctions Lambda automatiquement créés
-- Métriques API Gateway disponibles
-- Métriques DynamoDB pour le suivi des performances
-
-### DynamoDB
-
-- **Table principale** : `{table-name}-{environment}`
-- **Index secondaire** : `BatchIdIndex` pour requêtes par batch
-- **Streams** : Activés pour traçabilité
-
-## 🤝 Contribution
-
-1. Créer une branche feature depuis `main`
-2. Faire vos modifications et les tester
-3. Soumettre une pull request
-
-### Commandes de Développement
+### CloudWatch Logs
 
 ```bash
-# Formater le code Python
-black mp4_small_analyser_cdk/ lambda/
+# Logs du dispatcher
+aws logs tail "/aws/lambda/Mp4-small-analyserCdkStac-MP4DispatcherFunction75B-xxxxx" --follow
 
-# Linter
-flake8 mp4_small_analyser_cdk/ lambda/
+# Logs de l'analyser
+aws logs tail "/aws/lambda/Mp4-small-analyserCdkStac-MP4AnalyserFunctionEC0C4-xxxxx" --follow
 
-# Type checking
-mypy mp4_small_analyser_cdk/
+# Logs du callback
+aws logs tail "/aws/lambda/Mp4-small-analyserCallback-CallbackHandler4434C38D-xxxxx" --follow
 ```
 
-## 📝 Notes Importantes
+### Métriques
 
-- **Environnements** : Le nom des ressources inclut l'environnement (`dev`, `staging`, `prod`)
-- **Coûts** : DynamoDB en mode pay-per-request, Lambda facturé à l'usage
-- **Limites** : Timeout Lambda par défaut 30s, mémoire 256MB
-- **Régions** : Configuré pour fonctionner dans toutes les régions AWS
+- **API Gateway** : Latence, erreurs, nombre de requêtes
+- **Lambda** : Durée d'exécution, erreurs, invocations
+- **DynamoDB** : Lectures/écritures, throttling
+
+## 🚀 Déploiement en Production
+
+### Checklist Pré-Production
+
+- [ ] Tester avec différents formats de fichiers MP4
+- [ ] Vérifier les limites de timeout pour les gros fichiers
+- [ ] Configurer les alertes CloudWatch
+- [ ] Tester la montée en charge
+- [ ] Sauvegarder la configuration DynamoDB
+
+### Scaling
+
+Le système scale automatiquement :
+
+- **Lambda** : Concurrence automatique jusqu'à 1000
+- **API Gateway** : 10,000 requêtes/seconde par défaut
+- **DynamoDB** : Mode pay-per-request (scaling automatique)
 
 ## 🆘 Dépannage
 
 ### Erreurs Communes
 
 ```bash
-# Bootstrap manquant
-Error: Need to perform AWS CDK bootstrap
-→ Solution: ./cdk-with-config.sh bootstrap
+# "Body de requête manquant"
+→ Vérifier le Content-Type: application/json
 
-# Permissions insuffisantes
-Error: User is not authorized to perform action
-→ Solution: Vérifier les permissions AWS du profil
+# "file_url est requis"
+→ Vérifier la structure JSON avec le champ files[]
 
-# Configuration manquante
-Error: File .env not found
-→ Solution: Exécuter ./setup-config.sh
+# Timeout Lambda
+→ Fichier trop volumineux ou URL lente, réduire la taille
+
+# "Le fichier ne contient pas de piste audio"
+→ Fichier vidéo sans piste audio, vérifier le contenu
 ```
 
-### Logs
+### Debug
 
 ```bash
-# Logs des Lambdas
-aws logs tail /aws/lambda/Mp4AnalyserCallbackStack-CallbackHandler --follow
+# Vérifier le statut des stacks
+./cdk.sh list
 
-# Logs API Gateway
-aws logs tail /aws/apigateway/Mp4AnalyserCallbackStack --follow
+# Voir les différences avant déploiement
+./cdk.sh diff
+
+# Récupérer les URLs après déploiement
+cat urls.txt
+```
+
+## 🔄 Maintenance
+
+### Mise à Jour
+
+```bash
+# Mettre à jour le code
+git pull
+./cdk.sh deploy --all
+```
+
+### Nettoyage
+
+```bash
+# Supprimer l'infrastructure
+./cdk.sh destroy --all
+
+# Nettoyer l'environnement local
+rm -rf .venv cdk.out urls.txt
 ```
 
 ---
 
-Construit avec ❤️ en utilisant AWS CDK Python
+## 📈 Roadmap
+
+- [ ] Support des formats audio supplémentaires (WAV, MP3)
+- [ ] Analyse vidéo avancée (détection de scènes)
+- [ ] Interface web pour les tests
+- [ ] Webhook personnalisables
+- [ ] Mise en cache des résultats
+
+---
+
+Construit avec ❤️ en utilisant AWS CDK Python, Lambda et ffmpeg

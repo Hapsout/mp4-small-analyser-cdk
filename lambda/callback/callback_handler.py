@@ -80,13 +80,12 @@ def handle_callback_post(event, context):
         # Auto-générer task_id si non fourni
         task_id = path_task_id or callback_data.get('task_id') or str(uuid.uuid4())
         
-        # Auto-générer batch_id si non fourni dans la payload
-        batch_id = callback_data.get('batch_id')
-        if not batch_id or not batch_id.strip():
-            batch_id = str(uuid.uuid4())
-        
         # Timestamp
         timestamp = datetime.utcnow().isoformat()
+        
+        # Extraire l'URL du fichier depuis les métadonnées ou la payload directe
+        file_url = callback_data.get('file_url') or \
+                   callback_data.get('metadata', {}).get('source_url', '')
         
         # Préparer l'item pour DynamoDB avec task_id comme partition key
         # Convertir processing_time en Decimal pour DynamoDB
@@ -96,10 +95,9 @@ def handle_callback_post(event, context):
         
         item = {
             'task_id': task_id,  # Partition key
-            'batch_id': batch_id,  # Sera utilisé pour les requêtes batch
             'timestamp': timestamp,
             'status': callback_data.get('status', 'unknown'),
-            'file_url': callback_data.get('file_url', ''),
+            'file_url': file_url,
             'analysis_results': json.dumps(callback_data.get('results', {}), default=str),
             'error_message': callback_data.get('error', ''),
             'processing_time': processing_time,
@@ -109,14 +107,13 @@ def handle_callback_post(event, context):
         # Enregistrer dans DynamoDB
         table.put_item(Item=item)
         
-        logger.info(f"Callback enregistré pour task_id: {task_id}, batch_id: {batch_id}")
+        logger.info(f"Callback enregistré pour task_id: {task_id}")
         
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'Callback reçu et enregistré',
                 'task_id': task_id,
-                'batch_id': batch_id,
                 'timestamp': timestamp
             }),
             'headers': {
@@ -169,7 +166,6 @@ def handle_callback_get(event, context):
                 'analysis_results': json.loads(item.get('analysis_results', '{}')),
                 'error_message': item.get('error_message', ''),
                 'processing_time': processing_time,
-                'batch_id': item.get('batch_id', str(uuid.uuid4())),
                 'metadata': json.loads(item.get('metadata', '{}'))
             }
             results.append(result)

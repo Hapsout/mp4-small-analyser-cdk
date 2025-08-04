@@ -112,27 +112,27 @@ if [ $IS_DEPLOY = true ] && [ $CDK_EXIT_CODE -eq 0 ]; then
 # URLs des APIs MP4 Small Analyser
 # Générées automatiquement le $(date)
 
-# API principale pour l'analyse MP4
+# API unifiée pour l'analyse MP4 (modes synchrone et asynchrone)
 MP4_ANALYSER_URL=${MP4_API_URL}mp4_small_analyser
 
-# API pour le traitement en batch  
-BATCH_URL=${MP4_API_URL}batch
-
-# API de callback pour recevoir les résultats
+# API de callback pour recevoir les résultats (mode asynchrone uniquement)
 CALLBACK_URL=${CALLBACK_API_URL}callback
 
 # URLs de test
+# Mode asynchrone (avec callback_url dans le body)
 # POST ${MP4_API_URL}mp4_small_analyser
-# POST ${MP4_API_URL}batch
+# 
+# Mode synchrone (sans callback_url dans le body)  
+# POST ${MP4_API_URL}mp4_small_analyser
+#
+# Callback endpoints
 # POST ${CALLBACK_API_URL}callback/{task_id}
 # GET  ${CALLBACK_API_URL}callback/{task_id}
-# GET  ${CALLBACK_API_URL}callback/batch/{batch_id}
 EOF
 
         echo "✅ Fichier urls.txt généré avec succès !"
         echo "📄 URLs disponibles :"
-        echo "  • MP4 Analyser: ${MP4_API_URL}mp4_small_analyser"
-        echo "  • Batch: ${MP4_API_URL}batch"
+        echo "  • MP4 Analyser (unifié): ${MP4_API_URL}mp4_small_analyser"
         echo "  • Callback: ${CALLBACK_API_URL}callback"
     else
         echo "⚠️  Impossible de récupérer les URLs des APIs"

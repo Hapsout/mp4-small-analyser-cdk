@@ -35,43 +35,28 @@ class Mp4SmallAnalyserCdkStack(Stack):
             }
         )
 
-        # Lambda dispatcher pour lancer les analyses MP4 de façon asynchrone
+        # Lambda dispatcher pour lancer les analyses MP4 (synchrone ou asynchrone)
         self.mp4_dispatcher_lambda = _lambda.Function(
             self, "MP4DispatcherFunction",
             runtime=_lambda.Runtime.PYTHON_3_12,
             handler="mp4_dispatcher_handler.lambda_handler",
             code=_lambda.Code.from_asset("lambda/mp4_dispatcher"),
-            timeout=Duration.seconds(30),  # Rapide, juste pour lancer l'analyse
-            memory_size=256,  # Peu de ressources nécessaires
+            timeout=Duration.minutes(5),  # Plus de temps pour le mode synchrone
+            memory_size=512,  # Plus de mémoire pour gérer plusieurs invocations
             environment={
                 'MP4_LAMBDA_NAME': self.mp4_analyser_lambda.function_name,
                 'LOG_LEVEL': 'INFO'
             }
         )
 
-        # Lambda pour le traitement en batch
-        self.batch_lambda = _lambda.Function(
-            self, "BatchFunction", 
-            runtime=_lambda.Runtime.PYTHON_3_12,
-            handler="batch_handler.lambda_handler",
-            code=_lambda.Code.from_asset("lambda/batch"),
-            timeout=Duration.minutes(5),
-            memory_size=512,
-            environment={
-                'MP4_LAMBDA_NAME': self.mp4_analyser_lambda.function_name,
-                'LOG_LEVEL': 'INFO'
-            }
-        )
-
-        # Permissions pour que les Lambdas puissent s'invoquer
+        # Permissions pour que le dispatcher puisse invoquer la lambda analyser
         self.mp4_analyser_lambda.grant_invoke(self.mp4_dispatcher_lambda)
-        self.mp4_analyser_lambda.grant_invoke(self.batch_lambda)
 
         # API Gateway
         self.api = apigw.RestApi(
             self, "MP4AnalyserApi",
             rest_api_name="MP4 Small Analyser API",
-            description="API pour l'analyse MP4 et le traitement en batch",
+            description="API pour l'analyse MP4 avec support asynchrone et synchrone",
             default_cors_preflight_options=apigw.CorsOptions(
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS,
@@ -79,22 +64,12 @@ class Mp4SmallAnalyserCdkStack(Stack):
             )
         )
 
-        # Route POST /mp4_small_analyser - Dispatch d'analyse individuelle
+        # Route POST /mp4_small_analyser - Gère les modes synchrone et asynchrone
         mp4_resource = self.api.root.add_resource("mp4_small_analyser")
         mp4_resource.add_method(
             "POST",
             apigw.LambdaIntegration(
                 self.mp4_dispatcher_lambda,
-                proxy=True
-            )
-        )
-
-        # Route POST /batch - Traitement en batch
-        batch_resource = self.api.root.add_resource("batch")
-        batch_resource.add_method(
-            "POST", 
-            apigw.LambdaIntegration(
-                self.batch_lambda,
                 proxy=True
             )
         )
@@ -115,11 +90,5 @@ class Mp4SmallAnalyserCdkStack(Stack):
         CfnOutput(
             self, "MP4DispatcherLambdaName", 
             value=self.mp4_dispatcher_lambda.function_name,
-            description="Nom de la Lambda MP4 dispatcher"
-        )
-
-        CfnOutput(
-            self, "BatchLambdaName",
-            value=self.batch_lambda.function_name,
-            description="Nom de la Lambda batch"
+            description="Nom de la Lambda MP4 dispatcher (gère les modes sync et async)"
         )
