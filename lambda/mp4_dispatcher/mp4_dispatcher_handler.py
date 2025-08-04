@@ -94,7 +94,7 @@ def lambda_handler(event, context):
                     'task_id': task_id,
                     'batch_id': batch_id,
                     'status': 'processing',
-                    'callback_url': callback_url
+                    'callback_url': f"{callback_url}/{task_id}"
                 }),
                 'headers': {
                     'Content-Type': 'application/json',

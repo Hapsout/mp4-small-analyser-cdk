@@ -14,6 +14,17 @@ logger.setLevel(logging.INFO)
 # Client Lambda
 lambda_client = boto3.client('lambda')
 
+def json_response(data, status_code=200):
+    """Utilitaire pour créer des réponses JSON avec caractères accentués lisibles"""
+    return {
+        'statusCode': status_code,
+        'body': json.dumps(data, ensure_ascii=False, indent=2),
+        'headers': {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin': '*'
+        }
+    }
+
 def lambda_handler(event, context):
     """
     Handler pour le traitement en batch des analyses MP4
@@ -23,30 +34,16 @@ def lambda_handler(event, context):
         if event.get('body'):
             batch_data = json.loads(event['body'])
         else:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Body de requête manquant'}),
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                }
-            }
+            return json_response({'error': 'Body de requête manquant'}, 400)
         
         # Valider la structure du batch
         mp4_tasks = batch_data.get('mp4_small_analyser', [])
         metadata = batch_data.get('metadata', {})
         
         if not mp4_tasks:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({
-                    'error': 'Aucune tâche mp4_small_analyser trouvée dans le batch'
-                }),
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                }
-            }
+            return json_response({
+                'error': 'Aucune tâche mp4_small_analyser trouvée dans le batch'
+            }, 400)
         
         # Générer un batch_id unique si pas fourni
         batch_id = metadata.get('batch_id')
@@ -69,32 +66,18 @@ def lambda_handler(event, context):
         
         logger.info(f"Batch {batch_id} terminé: {successful} succès, {failed} échecs")
         
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': 'Batch traité avec succès',
-                'batch_id': batch_id,
-                'total_tasks': len(mp4_tasks),
-                'successful': successful,
-                'failed': failed,
-                'results': results
-            }),
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            }
-        }
+        return json_response({
+            'message': 'Batch traité avec succès',
+            'batch_id': batch_id,
+            'total_tasks': len(mp4_tasks),
+            'successful': successful,
+            'failed': failed,
+            'results': results
+        })
         
     except Exception as e:
         logger.error(f"Erreur dans lambda_handler: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': f'Erreur lors du traitement du batch: {str(e)}'}),
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            }
-        }
+        return json_response({'error': f'Erreur lors du traitement du batch: {str(e)}'}, 500)
 
 
 def launch_parallel_analyses(lambda_name, tasks, batch_id):

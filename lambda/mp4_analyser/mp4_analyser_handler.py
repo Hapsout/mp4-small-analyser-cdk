@@ -18,6 +18,17 @@ logger.setLevel(logging.INFO)
 FFMPEG_PATH = '/opt/bin/ffmpeg'
 FFPROBE_PATH = '/opt/bin/ffprobe'
 
+def json_response(data, status_code=200):
+    """Utilitaire pour créer des réponses JSON avec caractères accentués lisibles"""
+    return {
+        'statusCode': status_code,
+        'body': json.dumps(data, ensure_ascii=False, indent=2),
+        'headers': {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin': '*'
+        }
+    }
+
 def lambda_handler(event, context):
     """
     Handler principal pour l'analyse MP4
@@ -27,14 +38,7 @@ def lambda_handler(event, context):
         if event.get('body'):
             request_data = json.loads(event['body'])
         else:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Body de requête manquant'}),
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                }
-            }
+            return json_response({'error': 'Body de requête manquant'}, 400)
         
         # Valider les paramètres requis
         file_url = request_data.get('file_url')
@@ -101,19 +105,12 @@ def lambda_handler(event, context):
         
         logger.info(f"Analyse terminée pour task_id: {task_id}, batch_id: {batch_id}")
         
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': 'Analyse lancée avec succès',
-                'task_id': task_id,
-                'batch_id': batch_id,
-                'callback_url': callback_url
-            }),
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            }
-        }
+        return json_response({
+            'message': 'Analyse lancée avec succès',
+            'task_id': task_id,
+            'batch_id': batch_id,
+            'callback_url': callback_url
+        })
         
     except Exception as e:
         logger.error(f"Erreur dans lambda_handler: {str(e)}")
@@ -140,14 +137,7 @@ def lambda_handler(event, context):
         except:
             pass
         
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': f'Erreur lors de l\'analyse: {str(e)}'}),
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            }
-        }
+        return json_response({'error': f'Erreur lors de l\'analyse: {str(e)}'}, 500)
 
 
 def download_mp4(url):
