@@ -62,6 +62,20 @@ def lambda_handler(event, context):
         if not batch_id or not batch_id.strip():
             batch_id = str(uuid.uuid4())
         
+        # Récupérer la méthode HTTP pour le callback (POST par défaut)
+        callback_method = request_data.get('method', 'POST').upper()
+        if callback_method not in ['POST', 'PUT']:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'error': 'La méthode doit être POST ou PUT'
+                }),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            }
+        
         # Analyser le fichier MP4
         logger.info(f"Début de l'analyse pour task_id: {task_id}, URL: {file_url}")
         
@@ -83,7 +97,7 @@ def lambda_handler(event, context):
         }
         
         # Envoyer le callback
-        send_callback(callback_url, task_id, callback_data)
+        send_callback(callback_url, task_id, callback_data, callback_method)
         
         logger.info(f"Analyse terminée pour task_id: {task_id}, batch_id: {batch_id}")
         
@@ -122,7 +136,7 @@ def lambda_handler(event, context):
                         'processor': 'mp4_small_analyser'
                     }
                 }
-                send_callback(callback_url, task_id, error_callback)
+                send_callback(callback_url, task_id, error_callback, 'POST')
         except:
             pass
         
@@ -141,10 +155,17 @@ def download_mp4(url):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     logger.info(f"Téléchargement du fichier depuis {url}...")
     
-    with urllib.request.urlopen(url) as response:
-        tmp.write(response.read())
-    tmp.close()
-    return tmp.name
+    # urllib.request.urlopen suit automatiquement les redirections (max 30)
+    try:
+        with urllib.request.urlopen(url) as response:
+            tmp.write(response.read())
+        tmp.close()
+        return tmp.name
+    except Exception as e:
+        tmp.close()
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        raise
 
 
 def run_cmd(cmd):
@@ -302,23 +323,37 @@ def analyze_mp4_from_url(file_url):
             os.remove(local_path)
 
 
-def send_callback(callback_url, task_id, callback_data):
+def send_callback(callback_url, task_id, callback_data, method='POST'):
     """Envoie le callback au système demandeur"""
     try:
         # Construire l'URL complète avec le task_id
         full_callback_url = f"{callback_url.rstrip('/')}/{task_id}"
         
-        response = requests.post(
-            full_callback_url,
-            json=callback_data,
-            timeout=30
-        )
+        # Choisir la méthode HTTP appropriée
+        method = method.upper()
+        if method == 'PUT':
+            response = requests.put(
+                full_callback_url,
+                json=callback_data,
+                allow_redirects=True,
+                headers={'Content-Type': 'application/json'}
+            )
+        else:  # POST par défaut
+            response = requests.post(
+                full_callback_url,
+                json=callback_data,
+                allow_redirects=True,
+                headers={'Content-Type': 'application/json'}
+            )
         
-        if response.status_code == 200:
-            logger.info(f"Callback envoyé avec succès pour {task_id}")
-        else:
-            logger.warning(f"Callback retourné avec status {response.status_code} pour {task_id}")
+        # Lever une exception pour les codes d'erreur HTTP
+        response.raise_for_status()
+        
+        logger.info(f"Callback {method} envoyé avec succès pour {task_id} (status: {response.status_code})")
             
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erreur de requête lors de l'envoi du callback {method} pour {task_id}: {str(e)}")
+        raise
     except Exception as e:
-        logger.error(f"Erreur lors de l'envoi du callback pour {task_id}: {str(e)}")
+        logger.error(f"Erreur lors de l'envoi du callback {method} pour {task_id}: {str(e)}")
         raise
