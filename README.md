@@ -92,10 +92,9 @@ Pour une analyse immédiate avec réponse directe :
 curl -X POST "https://your-api-url/prod/mp4_small_analyser" \
   -H "Content-Type: application/json" \
   -d '{
-    "files": [
-      {
-        "file_url": "https://example.com/video.mp4"
-      }
+    "files_url": [
+        "https://example.com/video.mp4",
+        "https://example.com/video_2.mp4"
     ]
   }'
 ```
@@ -154,7 +153,7 @@ curl -X POST "https://your-api-url/prod/mp4_small_analyser" \
     {
       "task_id": "def456",
       "file_url": "https://example.com/video1.mp4",
-      "callback_url": "https://callback-api-url/prod/callback/def456",
+      "callback_url": "https://callback-api-url/prod/callback/997c76c4-ae68-4547-a0e8-cbf8c5fc0128",
       "status": "launched"
     }
   ]
@@ -165,13 +164,10 @@ curl -X POST "https://your-api-url/prod/mp4_small_analyser" \
 
 Une fois l'analyse terminée (mode asynchrone), récupérez les résultats :
 
-```bash
+````bash
 # Résultat d'une tâche spécifique
 curl "https://callback-api-url/prod/callback/{task_id}"
 
-# Tous les résultats récents
-curl "https://callback-api-url/prod/test/results?limit=10"
-```
 
 ## 📄 Format des Résultats
 
@@ -198,7 +194,7 @@ curl "https://callback-api-url/prod/test/results?limit=10"
     "processed_at": "2025-08-04T15:30:45.123456"
   }
 }
-```
+````
 
 ### Analyse Échouée
 
@@ -244,9 +240,27 @@ curl -X POST "$(cat urls.txt | grep 'MP4 Analyser' | cut -d' ' -f4)" \
   -d @new_sync_request_example.json
 ```
 
-## 🔧 Configuration Avancée
+## 🔧 Configuration
+
+### Configuration Interactive
+
+Pour une configuration guidée, utilisez le script fourni :
+
+```bash
+./setup-config.sh
+```
+
+Ce script vous aide à :
+
+- ✅ Auto-détecter votre ID de compte AWS
+- ✅ Configurer la région AWS (défaut: eu-west-1)
+- ✅ Définir le profil AWS à utiliser
+- ✅ Personnaliser le nom du projet et l'environnement
+- ✅ Générer automatiquement le fichier `.env`
 
 ### Variables d'Environnement (.env)
+
+Si vous préférez configurer manuellement :
 
 ```bash
 # Configuration AWS
@@ -366,14 +380,4 @@ rm -rf .venv cdk.out urls.txt
 
 ---
 
-## 📈 Roadmap
-
-- [ ] Support des formats audio supplémentaires (WAV, MP3)
-- [ ] Analyse vidéo avancée (détection de scènes)
-- [ ] Interface web pour les tests
-- [ ] Webhook personnalisables
-- [ ] Mise en cache des résultats
-
----
-
-Construit avec ❤️ en utilisant AWS CDK Python, Lambda et ffmpeg
+Construit en utilisant AWS CDK Python, Lambda et ffmpeg
