@@ -379,5 +379,3 @@ rm -rf .venv cdk.out urls.txt
 ```
 
 ---
-
-Construit en utilisant AWS CDK Python, Lambda et ffmpeg
