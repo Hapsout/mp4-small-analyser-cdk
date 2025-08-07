@@ -40,6 +40,10 @@ def lambda_handler(event, context):
         else:
             return json_response({'error': 'Body de requête manquant'}, 400)
         
+        # Extraire les query parameters de la requête
+        query_params = event.get('queryStringParameters', {}) or {}
+        logger.info(f"Query parameters reçus: {query_params}")
+        
         # Valider que files_url est présent
         files_url = request_data.get('files_url', [])
         if not files_url:
@@ -49,17 +53,17 @@ def lambda_handler(event, context):
         
         if callback_url:
             # Mode asynchrone : lancer les analyses et retourner immédiatement
-            return handle_async_mode(files_url, callback_url, start_time)
+            return handle_async_mode(files_url, callback_url, query_params, start_time)
         else:
             # Mode synchrone : attendre toutes les réponses
-            return handle_sync_mode(files_url, start_time)
+            return handle_sync_mode(files_url, query_params, start_time)
             
     except Exception as e:
         logger.error(f"Erreur dans lambda_handler: {str(e)}")
         return json_response({'error': f'Erreur lors du lancement de l\'analyse: {str(e)}'}, 500)
 
 
-def handle_async_mode(files_url, callback_url, start_time):
+def handle_async_mode(files_url, callback_url, query_params, start_time):
     """
     Mode asynchrone : lance les analyses et retourne immédiatement
     Les résultats seront envoyés aux URLs de callback individuelles
@@ -82,7 +86,8 @@ def handle_async_mode(files_url, callback_url, start_time):
             task_data = {
                 'file_url': file_url,
                 'callback_url': individual_callback_url,
-                'task_id': file_uuid
+                'task_id': file_uuid,
+                'query_params': query_params  # Ajouter les query params
             }
             
             # Préparer le payload comme si c'était une requête API Gateway
@@ -91,7 +96,8 @@ def handle_async_mode(files_url, callback_url, start_time):
                 'body': json.dumps(task_data),
                 'headers': {
                     'Content-Type': 'application/json'
-                }
+                },
+                'queryStringParameters': query_params  # Passer aussi dans l'event
             }
             
             # Invoquer la Lambda MP4 analyser de manière asynchrone
@@ -134,7 +140,7 @@ def handle_async_mode(files_url, callback_url, start_time):
         return json_response({'error': f'Erreur en mode asynchrone: {str(e)}'}, 500)
 
 
-def handle_sync_mode(files_url, start_time):
+def handle_sync_mode(files_url, query_params, start_time):
     """
     Mode synchrone : lance les analyses en parallèle et attend toutes les réponses
     """
@@ -155,7 +161,7 @@ def handle_sync_mode(files_url, start_time):
                 file_uuid = str(uuid.uuid4())
                 
                 # Soumettre la tâche
-                future = executor.submit(invoke_mp4_lambda_sync, mp4_lambda_name, file_url, file_uuid)
+                future = executor.submit(invoke_mp4_lambda_sync, mp4_lambda_name, file_url, file_uuid, query_params)
                 future_to_file[future] = {'file_url': file_url, 'task_id': file_uuid}
             
             # Collecter les résultats
@@ -200,7 +206,7 @@ def handle_sync_mode(files_url, start_time):
         return json_response({'error': f'Erreur en mode synchrone: {str(e)}'}, 500)
 
 
-def invoke_mp4_lambda_sync(lambda_name, file_url, task_id):
+def invoke_mp4_lambda_sync(lambda_name, file_url, task_id, query_params):
     """
     Invoque la Lambda MP4 analyser de manière synchrone et récupère le résultat
     """
@@ -208,7 +214,8 @@ def invoke_mp4_lambda_sync(lambda_name, file_url, task_id):
         # Préparer les données pour la lambda MP4 analyser
         task_data = {
             'file_url': file_url,
-            'task_id': task_id
+            'task_id': task_id,
+            'query_params': query_params  # Ajouter les query params
             # Pas de callback_url en mode synchrone
         }
         
@@ -218,7 +225,8 @@ def invoke_mp4_lambda_sync(lambda_name, file_url, task_id):
             'body': json.dumps(task_data),
             'headers': {
                 'Content-Type': 'application/json'
-            }
+            },
+            'queryStringParameters': query_params  # Passer aussi dans l'event
         }
         
         # Invoquer la Lambda de manière synchrone

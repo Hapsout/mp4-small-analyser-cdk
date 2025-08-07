@@ -14,6 +14,9 @@ import requests
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Configuration debug
+DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
+
 # Chemins vers les binaires ffmpeg (depuis notre Layer Lambda)
 FFMPEG_PATH = '/opt/bin/ffmpeg'
 FFPROBE_PATH = '/opt/bin/ffprobe'
@@ -39,6 +42,13 @@ def lambda_handler(event, context):
             request_data = json.loads(event['body'])
         else:
             return json_response({'error': 'Body de requête manquant'}, 400)
+        
+        # Récupérer les query parameters
+        query_params = request_data.get('query_params', {})
+        if not query_params and event.get('queryStringParameters'):
+            query_params = event.get('queryStringParameters', {})
+        
+        logger.info(f"Query parameters reçus dans l'analyser: {query_params}")
         
         # Valider les paramètres requis
         file_url = request_data.get('file_url')
@@ -83,8 +93,12 @@ def lambda_handler(event, context):
         
         analysis_result = analyze_mp4_from_url(file_url)
         
-        end_time = datetime.now()
-        processing_time = (end_time - start_time).total_seconds()
+        # Debug : logger le résultat de l'analyse dans CloudWatch
+        if DEBUG:
+            logger.info(f"[DEBUG] Résultat de l'analyse pour task_id {task_id}: {json.dumps(analysis_result, indent=2, ensure_ascii=False)}")
+        
+        analysis_end_time = datetime.now()
+        processing_time = (analysis_end_time - start_time).total_seconds()
         
         # Préparer les données de callback/réponse
         callback_data = {
@@ -97,13 +111,32 @@ def lambda_handler(event, context):
                 'source_url': file_url,
                 'processor': 'mp4_small_analyser',
                 'version': '1.0.0',
-                'processed_at': end_time.isoformat()
+                'processed_at': analysis_end_time.isoformat()
             }
         }
         
+        # Debug : logger les données complètes du callback
+        if DEBUG:
+            logger.info(f"[DEBUG] Données de callback complètes pour task_id {task_id}: {json.dumps(callback_data, indent=2, ensure_ascii=False)}")
+        
         # Mode asynchrone : envoyer le callback
         if callback_url:
-            send_callback(callback_url, task_id, callback_data, callback_method)
+            callback_start_time = datetime.now()
+            send_callback(callback_url, task_id, callback_data, callback_method, query_params)
+            callback_end_time = datetime.now()
+            callback_time = (callback_end_time - callback_start_time).total_seconds()
+            
+            # Debug : afficher les temps détaillés
+            if DEBUG:
+                download_time = analysis_result.get('download_time', 0)
+                analysis_only_time = analysis_result.get('processing_time', 0)
+                total_time = processing_time
+                logger.info(f"[DEBUG] Chronométrage détaillé pour task_id {task_id}:")
+                logger.info(f"[DEBUG]   - Temps de téléchargement: {download_time:.2f}s")
+                logger.info(f"[DEBUG]   - Temps d'analyse audio: {analysis_only_time:.2f}s") 
+                logger.info(f"[DEBUG]   - Temps de callback: {callback_time:.2f}s")
+                logger.info(f"[DEBUG]   - Temps total: {total_time:.2f}s")
+            
             logger.info(f"Analyse terminée pour task_id: {task_id} en {processing_time:.2f}s - Callback envoyé")
             
             return json_response({
@@ -114,6 +147,16 @@ def lambda_handler(event, context):
             })
         else:
             # Mode synchrone : retourner directement les résultats
+            # Debug : afficher les temps détaillés pour le mode synchrone aussi
+            if DEBUG:
+                download_time = analysis_result.get('download_time', 0)
+                analysis_only_time = analysis_result.get('processing_time', 0)
+                total_time = processing_time
+                logger.info(f"[DEBUG] Chronométrage détaillé pour task_id {task_id} (mode synchrone):")
+                logger.info(f"[DEBUG]   - Temps de téléchargement: {download_time:.2f}s")
+                logger.info(f"[DEBUG]   - Temps d'analyse audio: {analysis_only_time:.2f}s")
+                logger.info(f"[DEBUG]   - Temps total: {total_time:.2f}s")
+            
             logger.info(f"Analyse terminée pour task_id: {task_id} en {processing_time:.2f}s - Mode synchrone")
             
             return json_response({
@@ -135,11 +178,17 @@ def lambda_handler(event, context):
             else:
                 processing_time = 0
             
-            # Utiliser les variables déjà définies ou des valeurs par défaut
-            if 'callback_url' not in locals():
-                callback_url = request_data.get('callback_url') if 'request_data' in locals() else None
-            if 'task_id' not in locals():
-                task_id = request_data.get('task_id') if 'request_data' in locals() else str(uuid.uuid4())
+            # Essayer d'extraire les variables depuis l'event directement
+            try:
+                event_body = json.loads(event.get('body', '{}'))
+                callback_url = event_body.get('callback_url')
+                task_id = event_body.get('task_id', str(uuid.uuid4()))
+                query_params = event_body.get('query_params', {})
+            except:
+                # Valeurs par défaut si l'extraction échoue
+                callback_url = None
+                task_id = str(uuid.uuid4())
+                query_params = {}
             
             error_callback = {
                 'status': 'failed',
@@ -155,7 +204,7 @@ def lambda_handler(event, context):
             
             if callback_url:
                 # Mode asynchrone : envoyer le callback d'erreur
-                send_callback(callback_url, task_id, error_callback, 'POST')
+                send_callback(callback_url, task_id, error_callback, 'POST', query_params)
                 return json_response({'error': f'Erreur lors de l\'analyse: {str(e)}'}, 500)
             else:
                 # Mode synchrone : retourner l'erreur directement avec les détails
@@ -315,19 +364,25 @@ def analyze_mp4_from_url(file_url):
     
     try:
         # Télécharger le fichier
+        download_start = datetime.now()
         local_path = download_mp4(file_url)
+        download_end = datetime.now()
+        download_time = (download_end - download_start).total_seconds()
         
         # Vérifier qu'il y a une piste audio
         if not has_audio_stream(local_path):
             raise ValueError("Le fichier ne contient pas de piste audio.")
         
         # Analyse complète
+        analysis_start = datetime.now()
         audio_duration, video_duration = get_durations(local_path)
         loudness_measured, loudness_true_peak = get_loudness(local_path)
         silence_percentage = get_silence_percentage(local_path, audio_duration)
+        analysis_end = datetime.now()
         
-        # Calculer le temps de traitement
-        processing_time = (datetime.now() - start_time).total_seconds()
+        # Calculer les temps de traitement
+        analysis_only_time = (analysis_end - analysis_start).total_seconds()
+        total_processing_time = (datetime.now() - start_time).total_seconds()
         
         return {
             "silencePercentage": silence_percentage,
@@ -335,7 +390,9 @@ def analyze_mp4_from_url(file_url):
             "loudnessTruePeak": loudness_true_peak,
             "audioDuration": audio_duration,
             "videoDuration": video_duration,
-            "processing_time": round(processing_time, 2)
+            "processing_time": round(analysis_only_time, 2),  # Temps d'analyse pure (sans téléchargement)
+            "download_time": round(download_time, 2),  # Temps de téléchargement
+            "total_time": round(total_processing_time, 2)  # Temps total incluant téléchargement
         }
         
     finally:
@@ -344,11 +401,24 @@ def analyze_mp4_from_url(file_url):
             os.remove(local_path)
 
 
-def send_callback(callback_url, task_id, callback_data, method='POST'):
+def send_callback(callback_url, task_id, callback_data, method='POST', query_params=None):
     """Envoie le callback au système demandeur"""
     try:
         # Utiliser directement l'URL de callback fournie (elle contient déjà le task_id si nécessaire)
         full_callback_url = callback_url.rstrip('/')
+        
+        # Ajouter les query parameters à l'URL de callback s'ils existent
+        if query_params and isinstance(query_params, dict):
+            import urllib.parse
+            query_string = urllib.parse.urlencode(query_params)
+            separator = '&' if '?' in full_callback_url else '?'
+            full_callback_url = f"{full_callback_url}{separator}{query_string}"
+            logger.info(f"URL de callback avec query params: {full_callback_url}")
+        
+        # Debug : logger l'URL finale et les données envoyées
+        if DEBUG:
+            logger.info(f"[DEBUG] Envoi callback {method} vers: {full_callback_url}")
+            logger.info(f"[DEBUG] Données envoyées: {json.dumps(callback_data, indent=2, ensure_ascii=False)}")
         
         # Choisir la méthode HTTP appropriée
         method = method.upper()

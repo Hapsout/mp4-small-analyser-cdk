@@ -31,7 +31,8 @@ class Mp4SmallAnalyserCdkStack(Stack):
             memory_size=2048,  # Plus de mémoire pour ffmpeg et téléchargement
             layers=[ffmpeg_layer],  # Ajouter le layer ffmpeg
             environment={
-                'LOG_LEVEL': 'INFO'
+                'LOG_LEVEL': 'INFO',
+                'DEBUG': 'true'
             }
         )
 
